@@ -1,0 +1,65 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: seugc_db
+    environment:
+      POSTGRES_DB: seugc
+      POSTGRES_USER: seugc
+      POSTGRES_PASSWORD: seugc
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U seugc -d seugc"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: seugc_backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.local
+      DJANGO_DEBUG: "true"
+      DJANGO_SECRET_KEY: "dev-secret-key"
+      DJANGO_ALLOWED_HOSTS: "*"
+      APP_TIMEZONE: Asia/Novosibirsk
+      POSTGRES_DB: seugc
+      POSTGRES_USER: seugc
+      POSTGRES_PASSWORD: seugc
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      CORS_ALLOWED_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app/backend
+      - ./backend_inference_bundle:/app/backend_inference_bundle
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py runserver 0.0.0.0:8000"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: seugc_frontend
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      VITE_API_BASE_URL: /api
+      VITE_PROXY_TARGET: http://backend:8000
+
+volumes:
+  pg_data:
